@@ -1,6 +1,15 @@
 package com.mindhub.email_service.service;
 
 
+import com.itextpdf.io.font.constants.StandardFonts;
+import com.itextpdf.kernel.font.PdfFont;
+import com.itextpdf.kernel.font.PdfFontFactory;
+import com.itextpdf.kernel.pdf.canvas.draw.SolidLine;
+import com.itextpdf.layout.element.Cell;
+import com.itextpdf.layout.element.LineSeparator;
+import com.itextpdf.layout.element.Table;
+import com.itextpdf.layout.properties.TextAlignment;
+import com.itextpdf.layout.properties.UnitValue;
 import com.mindhub.email_service.config.RabbitMQConfig;
 import com.mindhub.email_service.events.EmailEvent;
 import com.mindhub.email_service.events.OrderCreatedEvent;
@@ -48,24 +57,46 @@ public class EmailService {
         generateOrderPdf(event); //genero el pdf con los detalles del pedido
         sendEmailWithPdf(event);
     }
-
     private void generateOrderPdf(OrderCreatedEvent event) {
-        try (PdfWriter writer = new PdfWriter("order_" + event.getOrderId() + ".pdf")) {
+        String fileName = "order_" + event.getOrderId() + ".pdf";
+
+        try (PdfWriter writer = new PdfWriter(fileName)) {
             PdfDocument pdf = new PdfDocument(writer);
             Document document = new Document(pdf);
-            // aquí voy poniendo la estructura del documento que voy a mandar
-            document.add(new Paragraph("Order Details").setFontSize(25));
-            document.add(new Paragraph("Order ID: " + event.getOrderId()));
-            document.add(new Paragraph("User email: " + event.getCustomerEmail()));
-            document.add(new Paragraph("Items:"));
+
+            PdfFont boldFont = PdfFontFactory.createFont(StandardFonts.HELVETICA_BOLD);
+            PdfFont regularFont = PdfFontFactory.createFont(StandardFonts.HELVETICA);
+            Paragraph title = new Paragraph("Order Confirmation")
+                    .setFont(boldFont)
+                    .setFontSize(20)
+                    .setTextAlignment(TextAlignment.CENTER)
+                    .simulateBold();
+            document.add(title);
+
+            document.add(new Paragraph("\n"));
+            document.add(new Paragraph("Order ID: " + event.getOrderId()).setFont(boldFont));
+            document.add(new Paragraph("User Email: " + event.getCustomerEmail()).setFont(regularFont));
+            document.add(new LineSeparator(new SolidLine()));
+            document.add(new Paragraph("Items Ordered:").setFont(boldFont).setFontSize(14));
+            float[] columnWidths = {100f, 200f, 100f}; // Con esto creo una tabla
+            Table table = new Table(columnWidths);
+            table.setWidth(UnitValue.createPercentValue(100));
+            table.addHeaderCell(new Cell().add(new Paragraph("Product ID").setFont(boldFont)));
+            table.addHeaderCell(new Cell().add(new Paragraph("Name").setFont(boldFont)));
+            table.addHeaderCell(new Cell().add(new Paragraph("Quantity").setFont(boldFont)));
 
             for (ProductDTO product : event.getProducts()) {
-                document.add(new Paragraph("- Product ID: " + product.getId() +
-                        ", Name: " + product.getName() +
-                        ", Quantity: " + (product.getQuantity() != null ? product.getQuantity() : "N/A")));
+                table.addCell(new Cell().add(new Paragraph(String.valueOf(product.getId())).setFont(regularFont)));
+                table.addCell(new Cell().add(new Paragraph(product.getName()).setFont(regularFont)));
+                table.addCell(new Cell().add(new Paragraph(product.getQuantity() != null ? product.getQuantity().toString() : "N/A").setFont(regularFont)));
             }
 
+            document.add(table);
+            document.add(new Paragraph("\n"));
+            document.add(new Paragraph("Thank you for your order!").setFont(boldFont).setFontSize(14));
+
             document.close();
+            System.out.println("PDF generated: " + fileName);
         } catch (IOException e) {
             e.printStackTrace();
         }
