@@ -2,6 +2,7 @@ package com.mindhub.email_service.service;
 
 
 import com.itextpdf.io.font.constants.StandardFonts;
+import com.itextpdf.io.source.ByteArrayOutputStream;
 import com.itextpdf.kernel.font.PdfFont;
 import com.itextpdf.kernel.font.PdfFontFactory;
 import com.itextpdf.kernel.pdf.canvas.draw.SolidLine;
@@ -13,7 +14,12 @@ import com.itextpdf.layout.properties.UnitValue;
 import com.mindhub.email_service.config.RabbitMQConfig;
 import com.mindhub.email_service.events.EmailEvent;
 import com.mindhub.email_service.events.OrderCreatedEvent;
+import com.mindhub.email_service.events.OrderToPdfDTO;
 import com.mindhub.email_service.events.ProductDTO;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,6 +32,8 @@ import jakarta.mail.internet.MimeMessage;
 import com.itextpdf.kernel.pdf.*;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
+import org.thymeleaf.TemplateEngine;
+import org.thymeleaf.context.Context;
 
 import java.io.File;
 import java.io.IOException;
@@ -39,90 +47,105 @@ public class EmailService {
     @Value("${MIEMAIL}")
     private String EMAIL;
 
+    @Autowired
+    private TemplateEngine templateEngine;
 
+
+    //ESTE ESTABA BIEN
+//    @RabbitListener(queues = RabbitMQConfig.QUEUE_NAME)
+//    public void sendEmail(EmailEvent emailEvent) {
+//        SimpleMailMessage message = new SimpleMailMessage();
+//        message.setTo(emailEvent.getTo());
+//        message.setSubject(emailEvent.getSubject());
+//        message.setText(emailEvent.getBody());
+//        mailSender.send(message);
+//
+//        System.out.println("Correo enviado a: " + emailEvent.getTo());
+//    }
     @RabbitListener(queues = RabbitMQConfig.QUEUE_NAME)
-    public void sendEmail(EmailEvent emailEvent) {
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setTo(emailEvent.getTo());
-        message.setSubject(emailEvent.getSubject());
-        message.setText(emailEvent.getBody());
-        mailSender.send(message);
+    public void sendEmail(EmailEvent emailEvent) throws MessagingException {
+        // Extraer variables del evento
+        String username = emailEvent.getUsername();
+        String confirmationLink = emailEvent.getBody(); // El body debe ser el link de confirmación
 
-        System.out.println("Correo enviado a: " + emailEvent.getTo());
+        // Cargar la plantilla Thymeleaf
+        Context context = new Context();
+        context.setVariable("username", username);
+        context.setVariable("confirmationLink", confirmationLink);
+        String htmlContent = templateEngine.process("email-template", context);
+
+        // Enviar el email
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+        helper.setTo(emailEvent.getTo());
+        helper.setSubject(emailEvent.getSubject());
+        helper.setText(htmlContent, true); // ✅ Enviar como HTML
+
+        mailSender.send(message);
+        System.out.println("Correo enviado en HTML a: " + emailEvent.getTo());
     }
 
+//    @RabbitListener(queues = RabbitMQConfig.QUEUE_PDF)
+//    public void sendRegistrationEmail(EmailEvent emailEvent) {
+//        SimpleMailMessage message = new SimpleMailMessage();
+//        message.setTo(emailEvent.getTo());
+//        message.setSubject(emailEvent.getSubject());
+//        message.setText(emailEvent.getBody());
+//        mailSender.send(message);
+//
+//        System.out.println("Correo enviado a: " + emailEvent.getTo());
+//    }
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_PDF)
-    public void handleOrderCreatedEvent(OrderCreatedEvent event) {
-        generateOrderPdf(event); //genero el pdf con los detalles del pedido
-        sendEmailWithPdf(event);
-    }
-    private void generateOrderPdf(OrderCreatedEvent event) {
-        String fileName = "order_" + event.getOrderId() + ".pdf";
-
-        try (PdfWriter writer = new PdfWriter(fileName)) {
-            PdfDocument pdf = new PdfDocument(writer);
-            Document document = new Document(pdf);
-
-            PdfFont boldFont = PdfFontFactory.createFont(StandardFonts.HELVETICA_BOLD);
-            PdfFont regularFont = PdfFontFactory.createFont(StandardFonts.HELVETICA);
-            Paragraph title = new Paragraph("Order Confirmation")
-                    .setFont(boldFont)
-                    .setFontSize(20)
-                    .setTextAlignment(TextAlignment.CENTER)
-                    .simulateBold();
-            document.add(title);
-
-            document.add(new Paragraph("\n"));
-            document.add(new Paragraph("Order ID: " + event.getOrderId()).setFont(boldFont));
-            document.add(new Paragraph("User Email: " + event.getCustomerEmail()).setFont(regularFont));
-            document.add(new LineSeparator(new SolidLine()));
-            document.add(new Paragraph("Items Ordered:").setFont(boldFont).setFontSize(14));
-            float[] columnWidths = {100f, 200f, 100f}; // Con esto creo una tabla
-            Table table = new Table(columnWidths);
-            table.setWidth(UnitValue.createPercentValue(100));
-            table.addHeaderCell(new Cell().add(new Paragraph("Product ID").setFont(boldFont)));
-            table.addHeaderCell(new Cell().add(new Paragraph("Name").setFont(boldFont)));
-            table.addHeaderCell(new Cell().add(new Paragraph("Quantity").setFont(boldFont)));
-
-            for (ProductDTO product : event.getProducts()) {
-                table.addCell(new Cell().add(new Paragraph(String.valueOf(product.getId())).setFont(regularFont)));
-                table.addCell(new Cell().add(new Paragraph(product.getName()).setFont(regularFont)));
-                table.addCell(new Cell().add(new Paragraph(product.getQuantity() != null ? product.getQuantity().toString() : "N/A").setFont(regularFont)));
-            }
-
-            document.add(table);
-            document.add(new Paragraph("\n"));
-            document.add(new Paragraph("Thank you for your order!").setFont(boldFont).setFontSize(14));
-
-            document.close();
-            System.out.println("PDF generated: " + fileName);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void sendEmailWithPdf(OrderCreatedEvent event) {
-        String subject = "Order Confirmation - Order ID: " + event.getOrderId();
-        String body = "This is an order confirmation for the Order ID: " + event.getOrderId()+".  You will find the details on the following pdf.";
-        String pdfFilePath = "order_" + event.getOrderId() + ".pdf";
-
+    public void sendPdfOrderEmail (OrderToPdfDTO orderDTO) throws MessagingException {
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true);
-
-            helper.setTo(event.getCustomerEmail()); // este es a quien le quiero mandar
-            helper.setSubject(subject);
-            helper.setText(body);
-
-            File pdfFile = new File(pdfFilePath);
-            helper.addAttachment(pdfFile.getName(), pdfFile);
-
-            mailSender.send(message);
-        } catch (MessagingException e) {
-            e.printStackTrace();
-            System.err.println("Error sending email: " + e.getMessage());
+            PDDocument document = new PDDocument();
+            PDPage page = new PDPage();
+            document.addPage(page);
+            PDPageContentStream contentStream = new PDPageContentStream(document, page);
+            generatePdfContent(contentStream, orderDTO, page);
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            document.save(byteArrayOutputStream);
+            byte[] pdfBytes = byteArrayOutputStream.toByteArray();
+            document.close();
+            System.out.println("se creo el pdf");
+            sendEmail(orderDTO.getUserMail(),pdfBytes,"document.pdf", orderDTO.getOrderId());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
+    }
+
+    private void generatePdfContent(PDPageContentStream contentStream, OrderToPdfDTO orderDTO, PDPage page) throws IOException {
+        PDType1Font font = PDType1Font.HELVETICA_BOLD;
+        contentStream.setFont(font, 14);
+        contentStream.beginText();
+        contentStream.setLeading(14.5f);
+        contentStream.newLineAtOffset(64, 750); // Posición inicial (x, y)
+        contentStream.showText("Order ID: "+orderDTO.getOrderId());
+        contentStream.newLine();
+        Double total = 0D;
+        for (ProductDTO item : orderDTO.getnewProductList()){
+            contentStream.showText("Product ID: " + item.getId() + " name: " + item.getName() + " description: " + item.getDescription()+" price: "+ item.getPrice()+  " Quantity: "+ item.getQuantity());
+            total = total + item.getPrice()*item.getQuantity();
+            contentStream.newLine();
+        }
+        contentStream.showText("Total: "+total);
+        contentStream.endText();
+        contentStream.close();
+    }
+
+    private void sendEmail(String to, byte[] pdfBytes, String fileName, Long orderId) throws MessagingException {
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, true);
+
+        helper.setTo(to);
+        helper.setSubject("The order "+orderId+" was confirmed");
+        helper.setText("Dear Customer,\n\nPlease find your order details attached.", false);
+
+        helper.addAttachment(fileName, () -> new java.io.ByteArrayInputStream(pdfBytes));
+
+        mailSender.send(message);
     }
 
 }

@@ -76,10 +76,15 @@
 			<version>3.4.2</version>
 		</dependency>
 
+<!--		<dependency>-->
+<!--			<groupId>com.itextpdf</groupId>-->
+<!--			<artifactId>itext7-core</artifactId>-->
+<!--			<version>7.2.5</version>-->
+<!--		</dependency>-->
+
 		<dependency>
-			<groupId>com.itextpdf</groupId>
-			<artifactId>itext7-core</artifactId>
-			<version>7.2.5</version>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-thymeleaf</artifactId>
 		</dependency>
 
 	</dependencies>
