@@ -1,19 +1,8 @@
 package com.mindhub.email_service.service;
 
-
-import com.itextpdf.io.font.constants.StandardFonts;
 import com.itextpdf.io.source.ByteArrayOutputStream;
-import com.itextpdf.kernel.font.PdfFont;
-import com.itextpdf.kernel.font.PdfFontFactory;
-import com.itextpdf.kernel.pdf.canvas.draw.SolidLine;
-import com.itextpdf.layout.element.Cell;
-import com.itextpdf.layout.element.LineSeparator;
-import com.itextpdf.layout.element.Table;
-import com.itextpdf.layout.properties.TextAlignment;
-import com.itextpdf.layout.properties.UnitValue;
 import com.mindhub.email_service.config.RabbitMQConfig;
 import com.mindhub.email_service.events.EmailEvent;
-import com.mindhub.email_service.events.OrderCreatedEvent;
 import com.mindhub.email_service.events.OrderToPdfDTO;
 import com.mindhub.email_service.events.ProductDTO;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -23,19 +12,13 @@ import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
-import com.itextpdf.kernel.pdf.*;
-import com.itextpdf.layout.Document;
-import com.itextpdf.layout.element.Paragraph;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
-
-import java.io.File;
 import java.io.IOException;
 
 @Service
@@ -51,51 +34,27 @@ public class EmailService {
     private TemplateEngine templateEngine;
 
 
-    //ESTE ESTABA BIEN
-//    @RabbitListener(queues = RabbitMQConfig.QUEUE_NAME)
-//    public void sendEmail(EmailEvent emailEvent) {
-//        SimpleMailMessage message = new SimpleMailMessage();
-//        message.setTo(emailEvent.getTo());
-//        message.setSubject(emailEvent.getSubject());
-//        message.setText(emailEvent.getBody());
-//        mailSender.send(message);
-//
-//        System.out.println("Correo enviado a: " + emailEvent.getTo());
-//    }
     @RabbitListener(queues = RabbitMQConfig.QUEUE_NAME)
     public void sendEmail(EmailEvent emailEvent) throws MessagingException {
-        // Extraer variables del evento
-        String username = emailEvent.getUsername();
-        String confirmationLink = emailEvent.getBody(); // El body debe ser el link de confirmación
 
-        // Cargar la plantilla Thymeleaf
+        String username = emailEvent.getUsername();
+        String confirmationLink = emailEvent.getBody();
+
         Context context = new Context();
         context.setVariable("username", username);
         context.setVariable("confirmationLink", confirmationLink);
         String htmlContent = templateEngine.process("email-template", context);
 
-        // Enviar el email
         MimeMessage message = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
         helper.setTo(emailEvent.getTo());
         helper.setSubject(emailEvent.getSubject());
-        helper.setText(htmlContent, true); // ✅ Enviar como HTML
+        helper.setText(htmlContent, true);
 
         mailSender.send(message);
         System.out.println("Correo enviado en HTML a: " + emailEvent.getTo());
     }
-
-//    @RabbitListener(queues = RabbitMQConfig.QUEUE_PDF)
-//    public void sendRegistrationEmail(EmailEvent emailEvent) {
-//        SimpleMailMessage message = new SimpleMailMessage();
-//        message.setTo(emailEvent.getTo());
-//        message.setSubject(emailEvent.getSubject());
-//        message.setText(emailEvent.getBody());
-//        mailSender.send(message);
-//
-//        System.out.println("Correo enviado a: " + emailEvent.getTo());
-//    }
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_PDF)
     public void sendPdfOrderEmail (OrderToPdfDTO orderDTO) throws MessagingException {
@@ -121,7 +80,7 @@ public class EmailService {
         contentStream.setFont(font, 14);
         contentStream.beginText();
         contentStream.setLeading(14.5f);
-        contentStream.newLineAtOffset(64, 750); // Posición inicial (x, y)
+        contentStream.newLineAtOffset(64, 750);
         contentStream.showText("Order ID: "+orderDTO.getOrderId());
         contentStream.newLine();
         Double total = 0D;
